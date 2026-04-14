@@ -1,0 +1,12 @@
+agent skill
+auto harness
+agent for ppt
+agent for design
+tool call rl
+rl enveriment
+rl environment
+tool calling reinforcement learning
+multi-turn agent training
+presentation agent
+slide generation agent
+design copilot

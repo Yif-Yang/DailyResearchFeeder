@@ -1,0 +1,12 @@
+I want high-signal papers and technical updates about agent skills, evaluation harnesses, tool-use reinforcement learning, RL environments for agentic systems, and agents that can generate PPT, slides, visual design, or structured documents.
+
+Prioritize:
+- papers with actual training, environment, rollout, or systems contributions for multi-turn tool-using agents
+- methods for tool calling, agent skill acquisition, auto harness/evaluation harness design, and robust agent infrastructure
+- work on presentation agents, design agents, document-generation agents, or multimodal agents for workplace creation tasks
+- technical launch posts and engineering blogs from major AI labs and companies when they materially change how these systems can be built
+
+Deprioritize:
+- generic LLM prompting tricks without agent or tool-use substance
+- light product announcements with no technical depth
+- unrelated startup, crypto, or consumer marketing posts

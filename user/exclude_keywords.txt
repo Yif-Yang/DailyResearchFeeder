@@ -1,0 +1,5 @@
+crypto
+nft
+web3
+gambling
+adtech

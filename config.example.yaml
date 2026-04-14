@@ -1,0 +1,72 @@
+timezone: Asia/Shanghai
+language: zh-CN
+
+user_files:
+  keywords_path: user/keywords.txt
+  exclude_keywords_path: user/exclude_keywords.txt
+  research_interests_path: user/research_interests.txt
+  arxiv_categories_path: user/arxiv_categories.txt
+  feeds_path: user/feeds.yaml
+
+llm:
+  provider: copilot_cli
+  base_url: https://api.openai.com/v1
+  azure_endpoint: https://your-resource-name.openai.azure.com/
+  azure_api_version: 2024-12-01-preview
+  azure_deployment: gpt-5.4
+  model: gpt-5.4
+  reasoning_effort: xhigh
+  scan_model: gpt-5.4-mini
+  scan_reasoning_effort: medium
+  enable_fast_mode: false
+  fast_mode_threshold: 180
+  fast_mode_shortlist_size: 120
+  timeout_seconds: 240
+  copilot_command: copilot
+
+pipeline:
+  lookback_days: 2
+  llm_batch_size: 8
+  max_review_items: 120
+  score_threshold: 6.4
+  max_papers: 12
+  max_news: 12
+  max_watchlist: 10
+
+sources:
+  arxiv:
+    enabled: true
+    max_results: 160
+  huggingface_daily:
+    enabled: true
+  feeds:
+    enabled: true
+    max_entries_per_feed: 6
+
+delivery:
+  subject_prefix: Daily Research Feeder
+  preview_path: artifacts/report_preview.html
+  run_log_path: artifacts/latest_run.json
+  status_path: artifacts/daily_status.json
+
+email:
+  provider: gmail_smtp
+  to_email: ""
+  from_email: Daily Research Feeder <no-reply@example.com>
+  azure_cli_command: az
+  smtp_host: smtp.gmail.com
+  smtp_port: 587
+  smtp_use_starttls: true
+
+state:
+  seen_items_path: state/seen_items.json
+  seen_ttl_days: 14
+  max_items: 4000
+
+schedule:
+  start_hour: 8
+  send_hour: 10
+  paper_check_offsets_minutes: [0, 30, 60]
+  paper_poll_interval_minutes: 15
+  weekend_fallback_days: 7
+  review_poll_seconds: 30
