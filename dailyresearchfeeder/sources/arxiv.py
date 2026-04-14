@@ -4,8 +4,6 @@ import asyncio
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 
-import aiohttp
-
 from dailyresearchfeeder.models import CandidateItem, ItemKind
 from dailyresearchfeeder.sources.base import BaseSource
 
@@ -17,6 +15,8 @@ class ArxivSource(BaseSource):
         self.categories = categories
 
     async def fetch(self, days_back: int = 2, max_results: int = 160) -> list[CandidateItem]:
+        import aiohttp
+
         if not self.categories:
             return []
         timeout = aiohttp.ClientTimeout(total=120, connect=30, sock_read=90)

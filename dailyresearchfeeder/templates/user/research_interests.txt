@@ -1,0 +1,11 @@
+I want a high-signal daily digest that combines new papers and technical news relevant to my interests.
+
+Prioritize:
+- papers with concrete methods, systems, training, evaluation, or engineering insights
+- technical blog posts, release notes, and research write-ups that materially change how work gets done
+- sources that are credible, actionable, and useful for tracking a fast-moving field
+
+Deprioritize:
+- low-effort summaries with little technical substance
+- generic announcements with no meaningful details
+- off-topic marketing posts

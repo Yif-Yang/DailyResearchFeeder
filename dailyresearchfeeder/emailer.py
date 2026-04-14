@@ -7,8 +7,6 @@ from pathlib import Path
 import shutil
 import smtplib
 
-import aiohttp
-
 
 class BaseEmailer(ABC):
     @abstractmethod
@@ -24,6 +22,8 @@ class ResendEmailer(BaseEmailer):
         self.from_email = from_email
 
     async def send(self, to: str, subject: str, html_content: str) -> bool:
+        import aiohttp
+
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -49,6 +49,8 @@ class AzureCliGraphEmailer(BaseEmailer):
         self.azure_cli_command = azure_cli_command
 
     async def send(self, to: str, subject: str, html_content: str) -> bool:
+        import aiohttp
+
         token = await self._get_access_token()
         payload = {
             "message": {

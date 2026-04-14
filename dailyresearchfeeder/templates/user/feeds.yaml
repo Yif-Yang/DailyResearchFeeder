@@ -1,0 +1,29 @@
+company_blogs:
+  - name: OpenAI News
+    url: https://openai.com/news/rss.xml
+    kind: release
+  - name: Google AI Blog
+    url: https://blog.google/technology/ai/rss/
+    kind: release
+  - name: Hugging Face Blog
+    url: https://huggingface.co/blog/feed.xml
+    kind: blog
+
+research_blogs:
+  - name: BAIR Blog
+    url: https://bair.berkeley.edu/blog/feed.xml
+    kind: blog
+  - name: Lil'Log
+    url: https://lilianweng.github.io/index.xml
+    kind: blog
+
+industry_news:
+  - name: TechCrunch AI
+    url: https://techcrunch.com/category/artificial-intelligence/feed/
+    kind: blog
+  - name: The Decoder
+    url: https://the-decoder.com/feed/
+    kind: blog
+  - name: Latent Space
+    url: https://www.latent.space/feed
+    kind: blog

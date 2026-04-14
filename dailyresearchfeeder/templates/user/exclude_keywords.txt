@@ -1,0 +1,4 @@
+# Optional topics to deprioritize.
+crypto
+nft
+gambling

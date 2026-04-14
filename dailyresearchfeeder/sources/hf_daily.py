@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-import aiohttp
-
 from dailyresearchfeeder.models import CandidateItem, ItemKind
 from dailyresearchfeeder.sources.base import BaseSource
 
@@ -15,6 +13,8 @@ class HuggingFaceDailySource(BaseSource):
     ]
 
     async def fetch(self, days_back: int = 2) -> list[CandidateItem]:
+        import aiohttp
+
         timeout = aiohttp.ClientTimeout(total=30)
         data = None
         cutoff = datetime.now(timezone.utc) - timedelta(days=days_back)

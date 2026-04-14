@@ -5,8 +5,6 @@ import re
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any
-
-import aiohttp
 import feedparser
 
 from dailyresearchfeeder.models import CandidateItem, ItemKind
@@ -42,6 +40,8 @@ class FeedSource(BaseSource):
         cutoff: datetime,
         max_entries_per_feed: int,
     ) -> list[CandidateItem]:
+        import aiohttp
+
         feed_url = str(feed_config.get("url", "")).strip()
         feed_name = str(feed_config.get("name", group_name)).strip() or group_name
         if not feed_url:

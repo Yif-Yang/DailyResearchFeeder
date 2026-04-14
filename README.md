@@ -4,6 +4,8 @@ Daily Research Feeder is a configurable tool for building a daily research diges
 
 It collects items from paper APIs and RSS or Atom feeds, ranks them with your interests plus an LLM, renders an HTML report, and can send the final digest by email.
 
+Version `0.0.1` is the first packaged release and includes an installable CLI plus a scaffold command for creating a new workspace.
+
 The repository is designed to be reusable by other people:
 
 - choose your own keywords and research interests
@@ -24,6 +26,30 @@ The repository is designed to be reusable by other people:
 - Run in dry-run, one-shot, backfill, or scheduled modes
 
 ## Quick Start
+
+Recommended install from PyPI:
+
+```bash
+pip install dailyresearchfeeder==0.0.1
+dailyresearchfeeder init my-digest
+cp my-digest/.env.example my-digest/.env
+dailyresearchfeeder --config my-digest/config.yaml --dry-run
+```
+
+This creates a runnable workspace with:
+
+- `config.yaml`
+- `.env.example`
+- `user/` sample files for keywords, interests, arXiv categories, and feeds
+- `artifacts/`, `runtime/`, and `state/` directories
+
+You can also generate `.env` directly during setup:
+
+```bash
+dailyresearchfeeder init my-digest --write-env
+```
+
+Install from source instead:
 
 1. Create your local config files.
 
@@ -73,6 +99,8 @@ Typical customization patterns:
 - narrow the digest to a few sources or broaden it to many feeds
 - tune limits such as paper count, news count, and scoring thresholds in local `config.yaml`
 
+If you installed from PyPI, the `dailyresearchfeeder init` command gives you generic starter templates that are meant to be edited immediately for your own domain.
+
 ## LLM And Email Providers
 
 Supported LLM providers:
@@ -105,6 +133,24 @@ EMAIL_FROM=Daily Research Feeder <your-account@gmail.com>
 See [.env.example](.env.example) for the full set of variables.
 
 ## Common Commands
+
+Installed package:
+
+```bash
+dailyresearchfeeder --config my-digest/config.yaml --dry-run
+dailyresearchfeeder --config my-digest/config.yaml
+dailyresearchfeeder --config my-digest/config.yaml --backfill-date 2026-04-14 --dry-run
+dailyresearchfeeder --config my-digest/config.yaml --mode scheduled_day --dry-run
+```
+
+From source checkout:
+
+```bash
+python main.py --config config.yaml --dry-run
+python main.py --config config.yaml
+python main.py --config config.yaml --backfill-date 2026-04-14 --dry-run
+python main.py --config config.yaml --mode scheduled_day --dry-run
+```
 
 Dry run:
 
@@ -148,6 +194,12 @@ Run one immediate execution with the shell defaults:
 bash scripts/run_daily_digest_now.sh
 ```
 
+You can also use the installed module entry point:
+
+```bash
+python -m dailyresearchfeeder --config my-digest/config.yaml --dry-run
+```
+
 ## Adding New Sources
 
 To add new sources, edit [user/feeds.yaml](user/feeds.yaml).
@@ -186,6 +238,8 @@ Keep secrets and user-specific identifiers in local `.env`, not in tracked YAML.
 The repository includes [daily-digest.yml](.github/workflows/daily-digest.yml) for scheduled or manual runs on GitHub Actions.
 
 The workflow uses [config.example.yaml](config.example.yaml) together with GitHub Secrets and Variables, so you do not need to commit a private `config.yaml`.
+
+For packaged releases, [package-release.yml](.github/workflows/package-release.yml) builds `sdist` and `wheel` artifacts on version tags such as `v0.0.1`, creates a GitHub release, and publishes to PyPI when `PYPI_API_TOKEN` is configured.
 
 ## Repository Layout
 
