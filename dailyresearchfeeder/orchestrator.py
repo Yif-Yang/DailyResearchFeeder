@@ -385,7 +385,9 @@ async def run_scheduled_day(
             )
             source_status = summarize_paper_source_status(paper_batches, state_store, settings.timezone, target_day)
 
-            if papers_fresh_enough(source_status):
+            past_deadline = now_local >= send_at
+            any_papers = any(s.get("fetched", 0) > 0 for s in source_status.values())
+            if papers_fresh_enough(source_status) or (past_deadline and any_papers):
                 stage = "reviewing_papers"
                 target_day_batches = filter_paper_source_batches_for_target_day(paper_batches, settings.timezone, target_day)
                 paper_fetch_stats = recompute_fetch_stats(
@@ -403,6 +405,8 @@ async def run_scheduled_day(
                     )
                 )
                 next_check_at = None
+                if not papers_fresh_enough(source_status):
+                    paper_mode = "partial_sources"
             else:
                 stage = "waiting_paper_refresh"
                 next_check_at = _next_check_time(initial_checks, now_local, settings)
@@ -422,7 +426,6 @@ async def run_scheduled_day(
         if (
             not reminder_sent
             and now_local >= send_at
-            and target_day.weekday() >= 5
             and paper_task is None
             and paper_result is None
             and not papers_fresh_enough(source_status)
