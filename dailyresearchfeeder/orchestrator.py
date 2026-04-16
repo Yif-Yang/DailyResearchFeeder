@@ -100,6 +100,35 @@ def papers_fresh_enough(source_status: dict[str, dict[str, Any]]) -> bool:
     return bool(arxiv_status.get("fresh")) and bool(hf_status.get("fresh"))
 
 
+def paper_sources_have_any_items(source_status: dict[str, dict[str, Any]]) -> bool:
+    return any(int(status.get("fetched", 0) or 0) > 0 for status in source_status.values())
+
+
+def _launch_paper_review_task(
+    settings: Settings,
+    state_store: SeenStateStore,
+    *,
+    paper_batches: dict[str, list[CandidateItem]],
+    paper_fetch_stats: dict[str, int],
+    target_day: date,
+) -> asyncio.Task[PreparedChannel]:
+    target_day_batches = filter_paper_source_batches_for_target_day(paper_batches, settings.timezone, target_day)
+    target_day_fetch_stats = recompute_fetch_stats(
+        target_day_batches,
+        source_keys=PAPER_SOURCE_KEYS,
+        base_stats=paper_fetch_stats,
+    )
+    unseen_papers = filter_seen_items(flatten_source_batches(target_day_batches, PAPER_SOURCE_KEYS), state_store)
+    return asyncio.create_task(
+        _prepare_channel_from_items(
+            settings,
+            state_store,
+            items=unseen_papers,
+            base_stats=target_day_fetch_stats,
+        )
+    )
+
+
 def estimate_remaining_minutes(
     now_local: datetime,
     next_check_at: datetime | None,
@@ -353,6 +382,8 @@ async def run_scheduled_day(
     paper_mode = "daily_refresh"
     news_result: PreparedChannel | None = None
     paper_result: PreparedChannel | None = None
+    latest_paper_batches: dict[str, list[CandidateItem]] = {}
+    latest_paper_fetch_stats: dict[str, int] = {}
     source_status = summarize_paper_source_status({}, state_store, settings.timezone, target_day)
     next_check_at = started_at
 
@@ -383,26 +414,20 @@ async def run_scheduled_day(
                 source_keys=PAPER_SOURCE_KEYS,
                 paper_days_back=paper_days_back,
             )
+            latest_paper_batches = paper_batches
+            latest_paper_fetch_stats = paper_fetch_stats
             source_status = summarize_paper_source_status(paper_batches, state_store, settings.timezone, target_day)
 
             past_deadline = now_local >= send_at
-            any_papers = any(s.get("fetched", 0) > 0 for s in source_status.values())
+            any_papers = paper_sources_have_any_items(source_status)
             if papers_fresh_enough(source_status) or (past_deadline and any_papers):
                 stage = "reviewing_papers"
-                target_day_batches = filter_paper_source_batches_for_target_day(paper_batches, settings.timezone, target_day)
-                paper_fetch_stats = recompute_fetch_stats(
-                    target_day_batches,
-                    source_keys=PAPER_SOURCE_KEYS,
-                    base_stats=paper_fetch_stats,
-                )
-                unseen_papers = filter_seen_items(flatten_source_batches(target_day_batches, PAPER_SOURCE_KEYS), state_store)
-                paper_task = asyncio.create_task(
-                    _prepare_channel_from_items(
-                        settings,
-                        state_store,
-                        items=unseen_papers,
-                        base_stats=paper_fetch_stats,
-                    )
+                paper_task = _launch_paper_review_task(
+                    settings,
+                    state_store,
+                    paper_batches=paper_batches,
+                    paper_fetch_stats=paper_fetch_stats,
+                    target_day=target_day,
                 )
                 next_check_at = None
                 if not papers_fresh_enough(source_status):
@@ -410,6 +435,8 @@ async def run_scheduled_day(
             else:
                 stage = "waiting_paper_refresh"
                 next_check_at = _next_check_time(initial_checks, now_local, settings)
+                if next_check_at > send_at:
+                    next_check_at = send_at
 
         if news_result is None and news_task.done():
             news_result = await news_task
@@ -428,8 +455,24 @@ async def run_scheduled_day(
             and now_local >= send_at
             and paper_task is None
             and paper_result is None
-            and not papers_fresh_enough(source_status)
         ):
+            if latest_paper_batches and paper_sources_have_any_items(source_status):
+                stage = "reviewing_papers"
+                paper_task = _launch_paper_review_task(
+                    settings,
+                    state_store,
+                    paper_batches=latest_paper_batches,
+                    paper_fetch_stats=latest_paper_fetch_stats,
+                    target_day=target_day,
+                )
+                next_check_at = None
+                if not papers_fresh_enough(source_status):
+                    paper_mode = "partial_sources"
+                continue
+
+            if papers_fresh_enough(source_status):
+                continue
+
             paper_mode = "no_daily_papers"
             stage = "ready_without_papers"
             paper_result = PreparedChannel(
