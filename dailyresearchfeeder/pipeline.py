@@ -521,8 +521,12 @@ def _select_items(reviewed_items: list[CandidateItem], settings: Settings) -> tu
 
     paper_picks = [item for item in qualified if item.kind == ItemKind.PAPER][: settings.pipeline.max_papers]
     news_picks = _select_news_items(reviewed_items, qualified, settings)
+    internet_picks = _select_internet_items(reviewed_items, qualified, settings)
+    # The renderer splits news_picks by source_group to show a dedicated
+    # "互联网观察" section, so we simply concatenate here.
+    combined_news = news_picks + internet_picks
 
-    selected = {normalize_url(item.url) for item in paper_picks + news_picks}
+    selected = {normalize_url(item.url) for item in paper_picks + combined_news}
     watch_candidates = [
         item
         for item in reviewed_items
@@ -530,7 +534,7 @@ def _select_items(reviewed_items: list[CandidateItem], settings: Settings) -> tu
     ]
     watch_candidates.sort(key=lambda item: item.relevance_score, reverse=True)
     watchlist = watch_candidates[: settings.pipeline.max_watchlist]
-    return paper_picks, news_picks, watchlist
+    return paper_picks, combined_news, watchlist
 
 
 def _has_user_keyword_match(item: CandidateItem, keywords: list[str]) -> bool:
@@ -620,7 +624,15 @@ def _select_news_items(
     if max_news <= 0:
         return []
 
-    qualified_news = [item for item in qualified_items if item.kind != ItemKind.PAPER]
+    # News selection only considers traditional feed-sourced items so that the
+    # new "internet_insights" board (HN + GitHub) does not starve established
+    # tech-blog / industry-news picks. internet_insights is selected separately
+    # via _select_internet_items.
+    qualified_news = [
+        item
+        for item in qualified_items
+        if item.kind != ItemKind.PAPER and item.source_group != "internet_insights"
+    ]
     qualified_news.sort(key=_news_sort_key, reverse=True)
 
     relaxed_threshold = max(RELAXED_NEWS_SCORE_FLOOR, settings.pipeline.score_threshold - 1.6)
@@ -628,6 +640,7 @@ def _select_news_items(
         item
         for item in reviewed_items
         if item.kind != ItemKind.PAPER
+        and item.source_group != "internet_insights"
         and item.relevance_score >= relaxed_threshold
         and (
             _has_user_keyword_match(item, settings.keywords)
@@ -650,6 +663,40 @@ def _select_news_items(
         _append_all_unique(selected, seen_urls, fallback_news, minimum_news)
 
     return selected[:max_news]
+
+
+def _select_internet_items(
+    reviewed_items: list[CandidateItem],
+    qualified_items: list[CandidateItem],
+    settings: Settings,
+) -> list[CandidateItem]:
+    max_internet = getattr(settings.pipeline, "max_internet", 8)
+    if max_internet <= 0:
+        return []
+
+    qualified_internet = [
+        item
+        for item in qualified_items
+        if item.kind != ItemKind.PAPER and item.source_group == "internet_insights"
+    ]
+    qualified_internet.sort(key=_news_sort_key, reverse=True)
+
+    relaxed_threshold = max(RELAXED_NEWS_SCORE_FLOOR, settings.pipeline.score_threshold - 1.6)
+    fallback_internet = [
+        item
+        for item in reviewed_items
+        if item.kind != ItemKind.PAPER
+        and item.source_group == "internet_insights"
+        and item.relevance_score >= relaxed_threshold
+    ]
+    fallback_internet.sort(key=_news_sort_key, reverse=True)
+
+    selected: list[CandidateItem] = []
+    seen_urls: set[str] = set()
+    _append_all_unique(selected, seen_urls, qualified_internet, max_internet)
+    if len(selected) < max_internet:
+        _append_all_unique(selected, seen_urls, fallback_internet, max_internet)
+    return selected[:max_internet]
 
 
 async def _collect_candidates(

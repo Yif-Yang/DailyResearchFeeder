@@ -53,6 +53,7 @@ class PipelineSettings:
     max_papers: int
     max_news: int
     max_watchlist: int
+    max_internet: int = 8
 
 
 @dataclass
@@ -307,6 +308,7 @@ def load_settings(config_path: str | Path = DEFAULT_CONFIG_PATH) -> Settings:
         max_papers=int(_env("PIPELINE_MAX_PAPERS", default=str(pipeline_raw.get("max_papers", 8)))),
         max_news=int(_env("PIPELINE_MAX_NEWS", default=str(pipeline_raw.get("max_news", 6)))),
         max_watchlist=int(_env("PIPELINE_MAX_WATCHLIST", default=str(pipeline_raw.get("max_watchlist", 6)))),
+        max_internet=int(_env("PIPELINE_MAX_INTERNET", default=str(pipeline_raw.get("max_internet", 8)))),
     )
 
     arxiv_raw = sources_raw.get("arxiv", {})
