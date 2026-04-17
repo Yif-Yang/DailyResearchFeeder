@@ -64,6 +64,7 @@ def _source_status(
     state_store: SeenStateStore,
     timezone_name: str,
     target_day: date,
+    error_count: int = 0,
 ) -> dict[str, Any]:
     target_day_items = [item for item in source_items if _local_date(item.published_at, timezone_name) == target_day]
     unseen_items = filter_seen_items(target_day_items, state_store)
@@ -74,6 +75,7 @@ def _source_status(
         "unseen": len(unseen_items),
         "latest_local_day": latest_local_day.isoformat() if latest_local_day else "",
         "fresh": latest_local_day == target_day,
+        "errors": error_count,
     }
 
 
@@ -82,14 +84,22 @@ def summarize_paper_source_status(
     state_store: SeenStateStore,
     timezone_name: str,
     target_day: date,
+    fetch_stats: dict[str, int] | None = None,
 ) -> dict[str, dict[str, Any]]:
     return {
-        SOURCE_KEY_ARXIV: _source_status(paper_batches.get(SOURCE_KEY_ARXIV, []), state_store, timezone_name, target_day),
+        SOURCE_KEY_ARXIV: _source_status(
+            paper_batches.get(SOURCE_KEY_ARXIV, []),
+            state_store,
+            timezone_name,
+            target_day,
+            int((fetch_stats or {}).get(f"{SOURCE_KEY_ARXIV}_errors", 0) or 0),
+        ),
         SOURCE_KEY_HUGGINGFACE: _source_status(
             paper_batches.get(SOURCE_KEY_HUGGINGFACE, []),
             state_store,
             timezone_name,
             target_day,
+            int((fetch_stats or {}).get(f"{SOURCE_KEY_HUGGINGFACE}_errors", 0) or 0),
         ),
     }
 
@@ -102,6 +112,10 @@ def papers_fresh_enough(source_status: dict[str, dict[str, Any]]) -> bool:
 
 def paper_sources_have_any_items(source_status: dict[str, dict[str, Any]]) -> bool:
     return any(int(status.get("fetched", 0) or 0) > 0 for status in source_status.values())
+
+
+def paper_sources_have_errors(source_status: dict[str, dict[str, Any]]) -> bool:
+    return any(int(status.get("errors", 0) or 0) > 0 for status in source_status.values())
 
 
 def _launch_paper_review_task(
@@ -384,7 +398,9 @@ async def run_scheduled_day(
     paper_result: PreparedChannel | None = None
     latest_paper_batches: dict[str, list[CandidateItem]] = {}
     latest_paper_fetch_stats: dict[str, int] = {}
-    source_status = summarize_paper_source_status({}, state_store, settings.timezone, target_day)
+    latest_source_status = summarize_paper_source_status({}, state_store, settings.timezone, target_day)
+    source_status = latest_source_status
+    paper_retry_deadline = send_at + timedelta(minutes=max(30, settings.schedule.paper_poll_interval_minutes * 4))
     next_check_at = started_at
 
     initial_checks = deque(
@@ -414,9 +430,17 @@ async def run_scheduled_day(
                 source_keys=PAPER_SOURCE_KEYS,
                 paper_days_back=paper_days_back,
             )
-            latest_paper_batches = paper_batches
-            latest_paper_fetch_stats = paper_fetch_stats
-            source_status = summarize_paper_source_status(paper_batches, state_store, settings.timezone, target_day)
+            source_status = summarize_paper_source_status(
+                paper_batches,
+                state_store,
+                settings.timezone,
+                target_day,
+                fetch_stats=paper_fetch_stats,
+            )
+            if paper_sources_have_any_items(source_status):
+                latest_paper_batches = paper_batches
+                latest_paper_fetch_stats = paper_fetch_stats
+                latest_source_status = source_status
 
             past_deadline = now_local >= send_at
             any_papers = paper_sources_have_any_items(source_status)
@@ -435,8 +459,9 @@ async def run_scheduled_day(
             else:
                 stage = "waiting_paper_refresh"
                 next_check_at = _next_check_time(initial_checks, now_local, settings)
-                if next_check_at > send_at:
-                    next_check_at = send_at
+                retry_deadline = paper_retry_deadline if paper_sources_have_errors(source_status) else send_at
+                if next_check_at > retry_deadline:
+                    next_check_at = retry_deadline
 
         if news_result is None and news_task.done():
             news_result = await news_task
@@ -456,7 +481,8 @@ async def run_scheduled_day(
             and paper_task is None
             and paper_result is None
         ):
-            if latest_paper_batches and paper_sources_have_any_items(source_status):
+            if latest_paper_batches and paper_sources_have_any_items(latest_source_status):
+                source_status = latest_source_status
                 stage = "reviewing_papers"
                 paper_task = _launch_paper_review_task(
                     settings,
@@ -471,6 +497,14 @@ async def run_scheduled_day(
                 continue
 
             if papers_fresh_enough(source_status):
+                continue
+
+            if paper_sources_have_errors(source_status) and now_local < paper_retry_deadline:
+                paper_mode = "paper_fetch_retry"
+                stage = "waiting_paper_refresh"
+                next_check_at = _next_check_time(initial_checks, now_local, settings)
+                if next_check_at > paper_retry_deadline:
+                    next_check_at = paper_retry_deadline
                 continue
 
             paper_mode = "no_daily_papers"

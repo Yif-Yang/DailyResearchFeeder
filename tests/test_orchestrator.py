@@ -48,8 +48,10 @@ def test_summarize_paper_source_status_marks_target_day_sources_fresh(tmp_path) 
 
     assert status[SOURCE_KEY_ARXIV]["fresh"] is True
     assert status[SOURCE_KEY_ARXIV]["unseen"] == 1
+    assert status[SOURCE_KEY_ARXIV]["errors"] == 0
     assert status[SOURCE_KEY_HUGGINGFACE]["fresh"] is True
     assert status[SOURCE_KEY_HUGGINGFACE]["unseen"] == 1
+    assert status[SOURCE_KEY_HUGGINGFACE]["errors"] == 0
 
 
 def test_summarize_paper_source_status_does_not_treat_old_unseen_papers_as_fresh(tmp_path) -> None:
@@ -80,6 +82,28 @@ def test_summarize_paper_source_status_does_not_treat_old_unseen_papers_as_fresh
     assert status[SOURCE_KEY_ARXIV]["fresh"] is False
     assert status[SOURCE_KEY_ARXIV]["fetched"] == 0
     assert status[SOURCE_KEY_ARXIV]["unseen"] == 0
+
+
+def test_summarize_paper_source_status_includes_fetch_errors(tmp_path) -> None:
+    state_store = SeenStateStore(path=tmp_path / "seen.json")
+    state_store.items = {}
+
+    status = summarize_paper_source_status(
+        {
+            SOURCE_KEY_ARXIV: [],
+            SOURCE_KEY_HUGGINGFACE: [],
+        },
+        state_store,
+        "Asia/Shanghai",
+        date(2026, 4, 14),
+        fetch_stats={
+            "arxiv_errors": 1,
+            "huggingface_daily_errors": 2,
+        },
+    )
+
+    assert status[SOURCE_KEY_ARXIV]["errors"] == 1
+    assert status[SOURCE_KEY_HUGGINGFACE]["errors"] == 2
 
 
 def test_estimate_remaining_minutes_accounts_for_next_check() -> None:

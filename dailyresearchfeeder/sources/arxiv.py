@@ -5,11 +5,14 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 
 from dailyresearchfeeder.models import CandidateItem, ItemKind
-from dailyresearchfeeder.sources.base import BaseSource
+from dailyresearchfeeder.sources.base import BaseSource, SourceFetchError
 
 
 class ArxivSource(BaseSource):
     BASE_URL = "http://export.arxiv.org/api/query"
+    HEADERS = {
+        "User-Agent": "DailyResearchFeeder/0.0.1 (+https://github.com/Yif-Yang/DailyResearchFeeder)"
+    }
 
     def __init__(self, categories: list[str]):
         self.categories = categories
@@ -26,7 +29,7 @@ class ArxivSource(BaseSource):
         start = 0
         items: list[CandidateItem] = []
 
-        async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
+        async with aiohttp.ClientSession(timeout=timeout, headers=self.HEADERS) as session:
             while True:
                 params = {
                     "search_query": " OR ".join(f"cat:{category}" for category in self.categories),
@@ -42,20 +45,29 @@ class ArxivSource(BaseSource):
                         async with session.get(self.BASE_URL, params=params) as response:
                             if response.status != 200:
                                 if attempt == 2:
-                                    return items
+                                    if items:
+                                        return items
+                                    raise SourceFetchError("arxiv", f"HTTP {response.status} for start={start}")
                                 await asyncio.sleep(3)
                                 continue
                             xml_content = await response.text()
                             break
-                    except Exception:
+                    except Exception as exc:
                         if attempt == 2:
-                            return items
+                            if items:
+                                return items
+                            raise SourceFetchError("arxiv", f"request failed for start={start}: {exc}") from exc
                         await asyncio.sleep(3)
 
                 if not xml_content:
                     break
 
-                root = ET.fromstring(xml_content)
+                try:
+                    root = ET.fromstring(xml_content)
+                except ET.ParseError as exc:
+                    if items:
+                        return items
+                    raise SourceFetchError("arxiv", f"invalid XML response for start={start}: {exc}") from exc
                 entries = root.findall("atom:entry", ns)
                 if not entries:
                     break

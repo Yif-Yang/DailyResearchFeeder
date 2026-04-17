@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import sys
 from datetime import date
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -316,6 +317,7 @@ async def collect_source_batches(
         if isinstance(result, Exception):
             source_batches[source_key] = []
             stats[f"{source_key}_errors"] = stats.get(f"{source_key}_errors", 0) + 1
+            print(f"Paper/news source fetch failed for {source_key}: {result}", file=sys.stderr)
             continue
 
         source_batches[source_key] = list(result)

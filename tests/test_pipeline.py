@@ -10,6 +10,7 @@ from dailyresearchfeeder.pipeline import (
     filter_paper_source_batches_for_target_day,
     keyword_filter,
 )
+from dailyresearchfeeder.sources.hf_daily import HuggingFaceDailySource
 
 
 def test_keyword_filter_matches_relevant_items() -> None:
@@ -168,6 +169,18 @@ def test_filter_paper_source_batches_for_target_day_keeps_only_target_local_date
     assert [item.url for item in filtered["arxiv"]] == ["https://example.com/today-paper"]
     assert filtered["huggingface_daily"] == []
     assert [item.url for item in filtered["feeds"]] == ["https://example.com/news"]
+
+
+def test_hf_daily_prefers_daily_submission_timestamp_for_freshness() -> None:
+    effective_published_at, original_published_at = HuggingFaceDailySource._effective_published_at(
+        {
+            "publishedAt": "2026-04-14T00:00:00.000Z",
+            "submittedOnDailyAt": "2026-04-17T01:02:22.562Z",
+        }
+    )
+
+    assert effective_published_at == datetime(2026, 4, 17, 1, 2, 22, 562000, tzinfo=timezone.utc)
+    assert original_published_at == datetime(2026, 4, 14, 0, 0, tzinfo=timezone.utc)
 
 
 def test_select_items_keeps_keyword_news_and_hot_industry_news() -> None:
