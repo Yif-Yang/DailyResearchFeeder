@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +62,18 @@ class SourceSettings:
     huggingface_enabled: bool
     feeds_enabled: bool
     feed_max_entries_per_feed: int
+    internet_insights_enabled: bool = True
+    internet_insights_hackernews_enabled: bool = True
+    internet_insights_hackernews_front_page_size: int = 30
+    internet_insights_hackernews_min_points: int = 40
+    internet_insights_github_enabled: bool = True
+    internet_insights_github_queries: list[str] = field(default_factory=lambda: [
+        "agent LLM",
+        "tool use reinforcement learning",
+        "presentation agent",
+    ])
+    internet_insights_github_max_per_query: int = 6
+    internet_insights_github_min_stars: int = 5
 
 
 @dataclass
@@ -300,12 +312,30 @@ def load_settings(config_path: str | Path = DEFAULT_CONFIG_PATH) -> Settings:
     arxiv_raw = sources_raw.get("arxiv", {})
     hf_raw = sources_raw.get("huggingface_daily", {})
     feeds_raw = sources_raw.get("feeds", {})
+    internet_raw = sources_raw.get("internet_insights", {}) or {}
+    internet_hn_raw = internet_raw.get("hackernews", {}) if isinstance(internet_raw, dict) else {}
+    internet_github_raw = internet_raw.get("github", {}) if isinstance(internet_raw, dict) else {}
+    raw_queries = internet_github_raw.get("queries")
+    if not isinstance(raw_queries, list) or not raw_queries:
+        raw_queries = [
+            "agent LLM",
+            "tool use reinforcement learning",
+            "presentation agent",
+        ]
     source_settings = SourceSettings(
         arxiv_enabled=bool(arxiv_raw.get("enabled", True)),
         arxiv_max_results=int(arxiv_raw.get("max_results", 160)),
         huggingface_enabled=bool(hf_raw.get("enabled", True)),
         feeds_enabled=bool(feeds_raw.get("enabled", True)),
         feed_max_entries_per_feed=int(feeds_raw.get("max_entries_per_feed", 6)),
+        internet_insights_enabled=bool(internet_raw.get("enabled", True)) if isinstance(internet_raw, dict) else True,
+        internet_insights_hackernews_enabled=bool(internet_hn_raw.get("enabled", True)),
+        internet_insights_hackernews_front_page_size=int(internet_hn_raw.get("front_page_size", 30)),
+        internet_insights_hackernews_min_points=int(internet_hn_raw.get("min_points", 40)),
+        internet_insights_github_enabled=bool(internet_github_raw.get("enabled", True)),
+        internet_insights_github_queries=[str(q).strip() for q in raw_queries if str(q).strip()],
+        internet_insights_github_max_per_query=int(internet_github_raw.get("max_per_query", 6)),
+        internet_insights_github_min_stars=int(internet_github_raw.get("min_stars", 5)),
     )
 
     delivery_settings = DeliverySettings(

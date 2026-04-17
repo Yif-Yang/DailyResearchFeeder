@@ -13,15 +13,22 @@ from dailyresearchfeeder.emailer import AzureCliGraphEmailer, FileEmailer, Resen
 from dailyresearchfeeder.llm import ReasoningClient
 from dailyresearchfeeder.models import CandidateItem, DailyDigest, ItemKind
 from dailyresearchfeeder.renderer import render_digest_html
-from dailyresearchfeeder.sources import ArxivSource, FeedSource, HuggingFaceDailySource
+from dailyresearchfeeder.sources import (
+    ArxivSource,
+    FeedSource,
+    HuggingFaceDailySource,
+    InternetInsightsConfig,
+    InternetInsightsSource,
+)
 from dailyresearchfeeder.state import SeenStateStore, normalize_url
 
 
 SOURCE_KEY_ARXIV = "arxiv"
 SOURCE_KEY_HUGGINGFACE = "huggingface_daily"
 SOURCE_KEY_FEEDS = "feeds"
+SOURCE_KEY_INTERNET = "internet_insights"
 PAPER_SOURCE_KEYS = (SOURCE_KEY_ARXIV, SOURCE_KEY_HUGGINGFACE)
-NEWS_SOURCE_KEYS = (SOURCE_KEY_FEEDS,)
+NEWS_SOURCE_KEYS = (SOURCE_KEY_FEEDS, SOURCE_KEY_INTERNET)
 
 
 RELATED_TOPIC_HINTS: dict[str, tuple[str, ...]] = {
@@ -68,9 +75,10 @@ HIGH_SIGNAL_SOURCE_GROUPS = {
     "industry_news": 1.8,
     "arxiv": 1.0,
     "social_watch": 0.5,
+    "internet_insights": 1.4,
 }
 
-HOT_NEWS_SOURCE_GROUPS = {"company_blogs", "industry_news"}
+HOT_NEWS_SOURCE_GROUPS = {"company_blogs", "industry_news", "internet_insights"}
 MIN_NEWS_PICK_TARGET = 5
 RELAXED_NEWS_SCORE_FLOOR = 4.8
 KEYWORD_MATCH_STOPWORDS = {"a", "an", "and", "for", "in", "of", "on", "the", "to", "with"}
@@ -305,6 +313,20 @@ async def collect_source_batches(
             days_back=days_back,
             max_entries_per_feed=settings.sources.feed_max_entries_per_feed,
         )
+    if (
+        getattr(settings.sources, "internet_insights_enabled", False)
+        and SOURCE_KEY_INTERNET in requested
+    ):
+        internet_config = InternetInsightsConfig(
+            hackernews_enabled=settings.sources.internet_insights_hackernews_enabled,
+            hackernews_front_page_size=settings.sources.internet_insights_hackernews_front_page_size,
+            hackernews_min_points=settings.sources.internet_insights_hackernews_min_points,
+            github_enabled=settings.sources.internet_insights_github_enabled,
+            github_queries=list(settings.sources.internet_insights_github_queries),
+            github_max_per_query=settings.sources.internet_insights_github_max_per_query,
+            github_min_stars=settings.sources.internet_insights_github_min_stars,
+        )
+        tasks[SOURCE_KEY_INTERNET] = InternetInsightsSource(internet_config).fetch(days_back=days_back)
 
     if not tasks:
         return {key: [] for key in requested}, {"fetched": 0}

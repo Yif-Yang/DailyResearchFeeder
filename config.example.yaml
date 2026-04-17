@@ -42,6 +42,22 @@ sources:
   feeds:
     enabled: true
     max_entries_per_feed: 6
+  internet_insights:
+    enabled: true
+    hackernews:
+      enabled: true
+      front_page_size: 30
+      min_points: 40
+    github:
+      enabled: true
+      queries:
+        - agent LLM
+        - tool use reinforcement learning
+        - presentation agent
+        - multimodal agent benchmark
+        - coding agent
+      max_per_query: 5
+      min_stars: 10
 
 delivery:
   subject_prefix: Daily Research Feeder

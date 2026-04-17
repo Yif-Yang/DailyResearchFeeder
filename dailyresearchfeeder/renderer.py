@@ -50,9 +50,14 @@ def render_digest_html(digest: DailyDigest, settings: Settings) -> str:
     )
 
     paper_watch = [i for i in digest.watchlist if i.kind == ItemKind.PAPER]
-    news_watch = [i for i in digest.watchlist if i.kind != ItemKind.PAPER]
+    news_watch_all = [i for i in digest.watchlist if i.kind != ItemKind.PAPER]
+    internet_watch = [i for i in news_watch_all if i.source_group == "internet_insights"]
+    news_watch = [i for i in news_watch_all if i.source_group != "internet_insights"]
+    internet_picks = [i for i in digest.news_picks if i.source_group == "internet_insights"]
+    news_only_picks = [i for i in digest.news_picks if i.source_group != "internet_insights"]
     paper_headlines, paper_related = _split_primary(digest.paper_picks, PAPER_HEADLINE_LIMIT)
-    news_headlines, news_related = _split_primary(digest.news_picks, NEWS_HEADLINE_LIMIT)
+    news_headlines, news_related = _split_primary(news_only_picks, NEWS_HEADLINE_LIMIT)
+    internet_headlines, internet_related = _split_primary(internet_picks, NEWS_HEADLINE_LIMIT)
 
     # ── Stats row (table for email compat) ──
     stats = [
@@ -197,6 +202,24 @@ def render_digest_html(digest: DailyDigest, settings: Settings) -> str:
   <div class="grp" style="padding:0 32px 12px;">
     {_section_label('👀', '', '新闻可能感兴趣')}
     {_render_cards(news_watch, variant='watch', empty_label='今天没有额外保留的新闻观察项。')}
+  </div>
+
+  <!-- ════════ INTERNET INSIGHTS ════════ -->
+  <div class="sec" style="padding:28px 32px 6px;">
+    <h2 style="margin:0;font-size:22px;font-weight:800;color:{_C["text"]};">🌐 互联网观察</h2>
+    <p style="margin:6px 0 0;font-size:13px;color:{_C["muted"]};">来自 Hacker News 首页 &amp; GitHub 新热门仓库，用于捕捉论文/新闻之外的社区信号。</p>
+  </div>
+  <div class="grp" style="padding:0 32px 12px;">
+    {_section_label('⭐', 'Top {len(internet_headlines)}', '互联网头条')}
+    {_render_cards(internet_headlines, variant='news', empty_label='今天没有形成互联网头条。')}
+  </div>
+  <div class="grp" style="padding:0 32px 12px;">
+    {_section_label('📎', '', '互联网相关')}
+    {_render_cards(internet_related, variant='news', empty_label='今天没有额外的互联网条目。')}
+  </div>
+  <div class="grp" style="padding:0 32px 12px;">
+    {_section_label('👀', '', '互联网观察项')}
+    {_render_cards(internet_watch, variant='watch', empty_label='今天没有额外的互联网观察项。')}
   </div>
 
   <!-- ════════ FOOTER ════════ -->
