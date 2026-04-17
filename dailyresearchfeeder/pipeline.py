@@ -297,7 +297,7 @@ async def collect_source_batches(
     source_keys: tuple[str, ...] | None = None,
     paper_days_back: int | None = None,
 ) -> tuple[dict[str, list[CandidateItem]], dict[str, int]]:
-    requested = set(source_keys or (SOURCE_KEY_ARXIV, SOURCE_KEY_HUGGINGFACE, SOURCE_KEY_FEEDS))
+    requested = set(source_keys or (SOURCE_KEY_ARXIV, SOURCE_KEY_HUGGINGFACE, SOURCE_KEY_FEEDS, SOURCE_KEY_INTERNET))
     tasks: dict[str, asyncio.Future] = {}
     effective_paper_days_back = paper_days_back if paper_days_back is not None else days_back
 
