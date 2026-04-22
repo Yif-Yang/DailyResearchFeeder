@@ -9,10 +9,13 @@ from dailyresearchfeeder.sources.base import BaseSource, SourceFetchError
 
 
 class ArxivSource(BaseSource):
-    BASE_URL = "http://export.arxiv.org/api/query"
+    BASE_URL = "https://export.arxiv.org/api/query"
     HEADERS = {
         "User-Agent": "DailyResearchFeeder/0.0.1 (+https://github.com/Yif-Yang/DailyResearchFeeder)"
     }
+    # arxiv API: be conservative on retries to avoid persistent HTTP 429.
+    MAX_ATTEMPTS = 5
+    BACKOFF_SCHEDULE = (5, 15, 45, 90, 180)
 
     def __init__(self, categories: list[str]):
         self.categories = categories
@@ -40,24 +43,30 @@ class ArxivSource(BaseSource):
                 }
                 xml_content = ""
 
-                for attempt in range(3):
+                for attempt in range(self.MAX_ATTEMPTS):
                     try:
                         async with session.get(self.BASE_URL, params=params) as response:
                             if response.status != 200:
-                                if attempt == 2:
+                                if attempt == self.MAX_ATTEMPTS - 1:
                                     if items:
                                         return items
                                     raise SourceFetchError("arxiv", f"HTTP {response.status} for start={start}")
-                                await asyncio.sleep(3)
+                                # Honor Retry-After when present (arxiv 429), else use schedule.
+                                retry_after = response.headers.get("Retry-After")
+                                try:
+                                    delay = float(retry_after) if retry_after else self.BACKOFF_SCHEDULE[attempt]
+                                except ValueError:
+                                    delay = self.BACKOFF_SCHEDULE[attempt]
+                                await asyncio.sleep(delay)
                                 continue
                             xml_content = await response.text()
                             break
                     except Exception as exc:
-                        if attempt == 2:
+                        if attempt == self.MAX_ATTEMPTS - 1:
                             if items:
                                 return items
                             raise SourceFetchError("arxiv", f"request failed for start={start}: {exc}") from exc
-                        await asyncio.sleep(3)
+                        await asyncio.sleep(self.BACKOFF_SCHEDULE[attempt])
 
                 if not xml_content:
                     break
