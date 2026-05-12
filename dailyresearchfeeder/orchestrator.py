@@ -23,7 +23,7 @@ from dailyresearchfeeder.pipeline import (
     create_state_store,
     deliver_digest,
     filter_seen_items,
-    filter_paper_source_batches_for_target_day,
+    filter_items_to_target_local_day,
     flatten_source_batches,
     recompute_fetch_stats,
     review_candidates,
@@ -122,23 +122,16 @@ def _launch_paper_review_task(
     settings: Settings,
     state_store: SeenStateStore,
     *,
-    paper_batches: dict[str, list[CandidateItem]],
-    paper_fetch_stats: dict[str, int],
-    target_day: date,
+    review_batches: dict[str, list[CandidateItem]],
+    review_fetch_stats: dict[str, int],
 ) -> asyncio.Task[PreparedChannel]:
-    target_day_batches = filter_paper_source_batches_for_target_day(paper_batches, settings.timezone, target_day)
-    target_day_fetch_stats = recompute_fetch_stats(
-        target_day_batches,
-        source_keys=PAPER_SOURCE_KEYS,
-        base_stats=paper_fetch_stats,
-    )
-    unseen_papers = filter_seen_items(flatten_source_batches(target_day_batches, PAPER_SOURCE_KEYS), state_store)
+    unseen_papers = filter_seen_items(flatten_source_batches(review_batches, PAPER_SOURCE_KEYS), state_store)
     return asyncio.create_task(
         _prepare_channel_from_items(
             settings,
             state_store,
             items=unseen_papers,
-            base_stats=target_day_fetch_stats,
+            base_stats=review_fetch_stats,
         )
     )
 
@@ -162,6 +155,45 @@ def estimate_remaining_minutes(
     else:
         eta_minutes += 20
     return eta_minutes
+
+
+def _latest_review_day_for_source(
+    items: list[CandidateItem],
+    timezone_name: str,
+    target_day: date,
+    fallback_days: int,
+) -> date | None:
+    cutoff_day = target_day - timedelta(days=max(0, fallback_days - 1))
+    local_days = {
+        local_day
+        for local_day in (_local_date(item.published_at, timezone_name) for item in items)
+        if local_day and cutoff_day <= local_day <= target_day
+    }
+    if not local_days:
+        return None
+    return max(local_days)
+
+
+def select_paper_review_batches(
+    source_batches: dict[str, list[CandidateItem]],
+    timezone_name: str,
+    target_day: date,
+    fallback_days: int,
+) -> tuple[dict[str, list[CandidateItem]], bool]:
+    selected_batches = {key: list(items) for key, items in source_batches.items()}
+    used_fallback = False
+
+    for source_key in PAPER_SOURCE_KEYS:
+        items = source_batches.get(source_key, [])
+        review_day = _latest_review_day_for_source(items, timezone_name, target_day, fallback_days)
+        if review_day is None:
+            selected_batches[source_key] = []
+            continue
+        selected_batches[source_key] = filter_items_to_target_local_day(items, timezone_name, review_day)
+        if review_day != target_day:
+            used_fallback = True
+
+    return selected_batches, used_fallback
 
 
 def _status_snapshot(
@@ -285,6 +317,7 @@ def _render_progress_email(
     paper_mode_label = {
         "daily_refresh": "等待当日论文源刷新",
         "no_daily_papers": "当天论文源暂无新论文，将按新闻与动态先发送",
+        "fallback_sources": "使用最近可用的论文源补齐（含非当天论文）",
     }.get(paper_mode, paper_mode)
 
     return f"""<!DOCTYPE html>
@@ -396,8 +429,9 @@ async def run_scheduled_day(
     paper_mode = "daily_refresh"
     news_result: PreparedChannel | None = None
     paper_result: PreparedChannel | None = None
-    latest_paper_batches: dict[str, list[CandidateItem]] = {}
-    latest_paper_fetch_stats: dict[str, int] = {}
+    latest_review_batches: dict[str, list[CandidateItem]] = {}
+    latest_review_fetch_stats: dict[str, int] = {}
+    latest_review_used_fallback = False
     latest_source_status = summarize_paper_source_status({}, state_store, settings.timezone, target_day)
     source_status = latest_source_status
     paper_retry_deadline = send_at + timedelta(minutes=max(30, settings.schedule.paper_poll_interval_minutes * 4))
@@ -437,24 +471,58 @@ async def run_scheduled_day(
                 target_day,
                 fetch_stats=paper_fetch_stats,
             )
-            if paper_sources_have_any_items(source_status):
-                latest_paper_batches = paper_batches
-                latest_paper_fetch_stats = paper_fetch_stats
-                latest_source_status = source_status
 
             past_deadline = now_local >= send_at
-            any_papers = paper_sources_have_any_items(source_status)
-            if papers_fresh_enough(source_status) or (past_deadline and any_papers):
+            if (
+                past_deadline
+                and not papers_fresh_enough(source_status)
+                and not paper_sources_have_errors(source_status)
+                and settings.schedule.weekend_fallback_days > paper_days_back
+            ):
+                paper_batches, paper_fetch_stats = await collect_source_batches(
+                    settings,
+                    days_back,
+                    source_keys=PAPER_SOURCE_KEYS,
+                    paper_days_back=settings.schedule.weekend_fallback_days,
+                )
+                source_status = summarize_paper_source_status(
+                    paper_batches,
+                    state_store,
+                    settings.timezone,
+                    target_day,
+                    fetch_stats=paper_fetch_stats,
+                )
+
+            review_batches, used_fallback = select_paper_review_batches(
+                paper_batches,
+                settings.timezone,
+                target_day,
+                settings.schedule.weekend_fallback_days,
+            )
+            review_fetch_stats = recompute_fetch_stats(
+                review_batches,
+                source_keys=PAPER_SOURCE_KEYS,
+                base_stats=paper_fetch_stats,
+            )
+            has_review_items = any(review_batches.get(source_key) for source_key in PAPER_SOURCE_KEYS)
+            if has_review_items:
+                latest_review_batches = review_batches
+                latest_review_fetch_stats = review_fetch_stats
+                latest_review_used_fallback = used_fallback
+                latest_source_status = source_status
+
+            if papers_fresh_enough(source_status) or (past_deadline and has_review_items):
                 stage = "reviewing_papers"
                 paper_task = _launch_paper_review_task(
                     settings,
                     state_store,
-                    paper_batches=paper_batches,
-                    paper_fetch_stats=paper_fetch_stats,
-                    target_day=target_day,
+                    review_batches=review_batches,
+                    review_fetch_stats=review_fetch_stats,
                 )
                 next_check_at = None
-                if not papers_fresh_enough(source_status):
+                if used_fallback:
+                    paper_mode = "fallback_sources"
+                elif not papers_fresh_enough(source_status):
                     paper_mode = "partial_sources"
             else:
                 stage = "waiting_paper_refresh"
@@ -481,18 +549,19 @@ async def run_scheduled_day(
             and paper_task is None
             and paper_result is None
         ):
-            if latest_paper_batches and paper_sources_have_any_items(latest_source_status):
+            if latest_review_batches:
                 source_status = latest_source_status
                 stage = "reviewing_papers"
                 paper_task = _launch_paper_review_task(
                     settings,
                     state_store,
-                    paper_batches=latest_paper_batches,
-                    paper_fetch_stats=latest_paper_fetch_stats,
-                    target_day=target_day,
+                    review_batches=latest_review_batches,
+                    review_fetch_stats=latest_review_fetch_stats,
                 )
                 next_check_at = None
-                if not papers_fresh_enough(source_status):
+                if latest_review_used_fallback:
+                    paper_mode = "fallback_sources"
+                elif not papers_fresh_enough(source_status):
                     paper_mode = "partial_sources"
                 continue
 

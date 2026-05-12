@@ -7,6 +7,7 @@ from dailyresearchfeeder.orchestrator import (
     SOURCE_KEY_ARXIV,
     SOURCE_KEY_HUGGINGFACE,
     estimate_remaining_minutes,
+    select_paper_review_batches,
     summarize_paper_source_status,
 )
 from dailyresearchfeeder.state import SeenStateStore
@@ -104,6 +105,68 @@ def test_summarize_paper_source_status_includes_fetch_errors(tmp_path) -> None:
 
     assert status[SOURCE_KEY_ARXIV]["errors"] == 1
     assert status[SOURCE_KEY_HUGGINGFACE]["errors"] == 2
+
+
+def test_select_paper_review_batches_uses_recent_fallback_day_per_source() -> None:
+    target_day = date(2026, 4, 27)
+    arxiv_fallback = CandidateItem(
+        title="Recent arXiv paper",
+        summary="Recent enough to reuse when the current day is empty.",
+        url="https://arxiv.org/abs/2604.22748",
+        source_name="arXiv",
+        kind=ItemKind.PAPER,
+        source_group="arxiv",
+        published_at=datetime(2026, 4, 24, 17, 48, tzinfo=timezone.utc),
+    )
+    hf_today = CandidateItem(
+        title="Fresh HF daily paper",
+        summary="Fresh paper for the target day.",
+        url="https://huggingface.co/papers/2604.22152",
+        source_name="Hugging Face Daily Papers",
+        kind=ItemKind.PAPER,
+        source_group="huggingface_daily",
+        published_at=datetime(2026, 4, 27, 0, 18, tzinfo=timezone.utc),
+    )
+
+    selected, used_fallback = select_paper_review_batches(
+        {
+            SOURCE_KEY_ARXIV: [arxiv_fallback],
+            SOURCE_KEY_HUGGINGFACE: [hf_today],
+        },
+        "Asia/Shanghai",
+        target_day,
+        fallback_days=7,
+    )
+
+    assert used_fallback is True
+    assert [item.url for item in selected[SOURCE_KEY_ARXIV]] == ["https://arxiv.org/abs/2604.22748"]
+    assert [item.url for item in selected[SOURCE_KEY_HUGGINGFACE]] == ["https://huggingface.co/papers/2604.22152"]
+
+
+def test_select_paper_review_batches_drops_items_outside_fallback_window() -> None:
+    target_day = date(2026, 4, 27)
+    stale_arxiv = CandidateItem(
+        title="Stale arXiv paper",
+        summary="Too old for the configured fallback window.",
+        url="https://arxiv.org/abs/2604.10000",
+        source_name="arXiv",
+        kind=ItemKind.PAPER,
+        source_group="arxiv",
+        published_at=datetime(2026, 4, 15, 12, 0, tzinfo=timezone.utc),
+    )
+
+    selected, used_fallback = select_paper_review_batches(
+        {
+            SOURCE_KEY_ARXIV: [stale_arxiv],
+            SOURCE_KEY_HUGGINGFACE: [],
+        },
+        "Asia/Shanghai",
+        target_day,
+        fallback_days=7,
+    )
+
+    assert used_fallback is False
+    assert selected[SOURCE_KEY_ARXIV] == []
 
 
 def test_estimate_remaining_minutes_accounts_for_next_check() -> None:
