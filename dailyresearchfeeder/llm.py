@@ -120,7 +120,10 @@ class ReasoningClient:
         )
 
         raw_text = await self._request(system_prompt, user_prompt, max_output_tokens=1200)
-        payload = self._parse_json_object(raw_text)
+        try:
+            payload = self._parse_json_object(raw_text)
+        except (ValueError, json.JSONDecodeError):
+            payload = {}
         overview = str(payload.get("overview", "")).strip()
         takeaways = [str(item).strip() for item in payload.get("takeaways", []) if str(item).strip()]
         if not overview:
